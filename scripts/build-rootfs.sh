@@ -70,10 +70,34 @@ if ! curl -fL --retry 3 \
     -o "$VUR_KEY"
 fi
 
+echo "== VUR public key fingerprint check =="
+
+if ! grep -Fqi \
+  'df:ec:10:ef:5c:03:e9:e0:9e:86:77:08:c2:b5:a8:cb' \
+  "$VUR_KEY"; then
+  echo "ERROR: VUR public key does not contain the expected fingerprint." >&2
+  exit 1
+fi
+
+# Prepare XBPS key directory.
 mkdir -p "$ROOTFS/var/db/xbps/keys"
 
-install -m 0644 "$VUR_KEY" \
-  "$ROOTFS/var/db/xbps/keys/df:ec:10:ef:5c:03:e9:e0:86:77:08:c2:b5:a8:cb.plist"
+VUR_KEY="$WORK/oco-repo-key.plist"
+VUR_KEY_PATH="$ROOTFS/var/db/xbps/keys/df:ec:10:ef:5c:03:e9:e0:9e:86:77:08:c2:b5:a8:cb.plist"
+
+if ! curl -fL --retry 3 \
+  "https://codeberg.org/oSoWoSo/oco/raw/branch/OCO/oco-repo-key.plist" \
+  -o "$VUR_KEY"; then
+  curl -fL --retry 3 \
+    "https://raw.githubusercontent.com/oSoWoSo/oco/OCO/oco-repo-key.plist" \
+    -o "$VUR_KEY"
+fi
+
+test -s "$VUR_KEY"
+install -m 0644 "$VUR_KEY" "$VUR_KEY_PATH"
+
+echo "Installed VUR key:"
+ls -l "$VUR_KEY_PATH"
   
 # Provide DNS and the kernel interfaces required by XBPS package installation.
 install -D -m 0644 /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
