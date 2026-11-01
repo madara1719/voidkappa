@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 ROOT_PARTUUID="${ROOT_PARTUUID:?ROOT_PARTUUID must be supplied}"
-VOID_ROOTFS_URL="${VOID_ROOTFS_URL:-https://repo-default.voidlinux.org/live/current/void-aarch64-ROOTFS-20250202.tar.xz}"
+VOID_ROOTFS_URL="${VOID_ROOTFS_URL:-https://repo-fastly.voidlinux.org/live/current/void-aarch64-ROOTFS-20250202.tar.xz}" 
 VOID_ROOTFS_SHA256="${VOID_ROOTFS_SHA256:-01a30f17ae06d4d5b322cd579ca971bc479e02cc284ec1e5a4255bea6bac3ce6}"
 HEXDUMP_RELEASE="${HEXDUMP_RELEASE:-6.18.34-stb-cbm+}"
 HEXDUMP_KERNEL_SHA256="${HEXDUMP_KERNEL_SHA256:-d8c4bbde8eb206145aa53733d2ab2d0f985b7b983b9151a5f0543ffe0d5c83ad}"
