@@ -78,7 +78,9 @@ mount -t proc proc "$ROOTFS/proc"
 mount -t sysfs sysfs "$ROOTFS/sys"
 mount --bind /run "$ROOTFS/run"
 
-chroot "$ROOTFS" /bin/sh -euc '
+chroot "$ROOTFS" /bin/sh -euc ' 
+  echo "== Checking fish package availability =="
+  xbps-query -Rs '^fish$' || true
   export PATH=/usr/bin:/usr/sbin:/bin:/sbin
   xbps-install -Suy xbps
   # Refresh the 2025 bootstrap ROOTFS against current official Void repositories.
@@ -90,7 +92,7 @@ chroot "$ROOTFS" /bin/sh -euc '
     NetworkManager wpa_supplicant dbus bluez elogind seatd polkit \
     pipewire wireplumber alsa-utils alsa-ucm-conf linux-firmware \
     mesa-dri xorg-server-xwayland xdg-desktop-portal \
-    foot fish sudo shadow git curl zstd tar \
+    foot sudo shadow git curl zstd tar \
     xdg-user-dirs wl-clipboard grim slurp playerctl brightnessctl \
     pavucontrol fastfetch \
     hyprland hyprlock hyprpaper hyprpicker hyprpolkitagent \
@@ -125,7 +127,7 @@ chroot "$ROOTFS" /bin/sh -euc '
   getent group input >/dev/null 2>&1 || groupadd input
   getent group seat >/dev/null 2>&1 || groupadd seat
   if ! id fede >/dev/null 2>&1; then
-    useradd --create-home --user-group --shell /bin/fish \
+    useradd --create-home --user-group --shell /bin/bash \
       --groups wheel,video,audio,input,seat fede
   fi
   install -d -m 0750 /etc/sudoers.d
