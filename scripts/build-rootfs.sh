@@ -136,6 +136,7 @@ chroot "$ROOTFS" /bin/sh -euc '
   passwd -l fede >/dev/null 2>&1 || true
 '
 
+
 # Enable runit services only when the package actually installed their service dirs.
 mkdir -p "$ROOTFS/var/service"
 
