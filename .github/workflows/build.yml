@@ -30,7 +30,7 @@ jobs:
     env:
       ROOT_PARTUUID: ${{ inputs.root_partuuid }}
       ACCEPT_VUR_REPO: ${{ inputs.accept_vur_repo }}
-      VOID_ROOTFS_URL: https://repo-default.voidlinux.org/live/current/void-aarch64-ROOTFS-20250202.tar.xz
+      VOID_ROOTFS_URL: https://repo-fastly.voidlinux.org/live/current/void-aarch64-ROOTFS-20250202.tar.xz       
       VOID_ROOTFS_SHA256: 01a30f17ae06d4d5b322cd579ca971bc479e02cc284ec1e5a4255bea6bac3ce6
       HEXDUMP_RELEASE: 6.18.34-stb-cbm+
       HEXDUMP_KERNEL_URL: https://github.com/hexdump0815/linux-mainline-mediatek-mt81xx-kernel/releases/download/6.18.34-stb-cbm%2B/6.18.34-stb-cbm%2B.tar.gz
