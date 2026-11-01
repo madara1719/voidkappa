@@ -42,7 +42,10 @@ jobs:
     timeout-minutes: 180
     env:
       ROOT_PARTUUID: ${{ inputs.root_partuuid }}
-      ACCEPT_VUR_REPO: ${{ inputs.accept_vur_repo }}
+      ACCEPT_VUR_REPO: ${{ inputs.accept_vur_repo }} 
+      ACCEPT_HYPRLAND_REPO: ${{ inputs.accept_hyprland_repo }}
+      HYPRLAND_KEY_URL: ${{ inputs.hyprland_key_url }}
+      HYPRLAND_KEY_SHA256: ${{ inputs.hyprland_key_sha256 }}
       VOID_ROOTFS_URL: https://repo-fastly.voidlinux.org/live/current/void-aarch64-ROOTFS-20250202.tar.xz       
       VOID_ROOTFS_SHA256: 01a30f17ae06d4d5b322cd579ca971bc479e02cc284ec1e5a4255bea6bac3ce6
       HEXDUMP_RELEASE: 6.18.34-stb-cbm+
