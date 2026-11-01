@@ -4,28 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       root_partuuid:
-        description: PARTUUID of the microSD root partition used for testing
+        description: PARTUUID of the root partition (microSD test or eMMC mmcblk0p4)
         required: true
         default: 'c3621fce-ebbb-4ce4-9338-c18a405840ca'
-        type: string 
+        type: string
       accept_vur_repo:
-         description: I understand that Hyprland/Noctalia packages come from the third-party Void Community Repository (VUR)
-         required: true
-         default: false
-         type: boolean
-      accept_hyprland_repo:
-        description: I trust the third-party Sofijacom Hyprland AArch64 repository and its signing key
+        description: I understand that Hyprland, Noctalia and the greeter come from the third-party Void Community Repository (VUR)
         required: true
         default: false
         type: boolean
-      hyprland_key_url:
-        description: Raw URL of the Hyprland repo public key (.plist)
-        required: true
-        type: string
-      hyprland_key_sha256:
-        description: sha256 of the key file you reviewed
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -36,25 +23,18 @@ concurrency:
 
 jobs:
   build:
-    # GitHub-hosted ARM64 runner; this is a public repository, so standard
-    # hosted-runner use is available without building on the Chromebook.
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 180
+    timeout-minutes: 120
     env:
       ROOT_PARTUUID: ${{ inputs.root_partuuid }}
-      ACCEPT_VUR_REPO: ${{ inputs.accept_vur_repo }} 
-      ACCEPT_HYPRLAND_REPO: ${{ inputs.accept_hyprland_repo }}
-      HYPRLAND_KEY_URL: ${{ inputs.hyprland_key_url }}
-      HYPRLAND_KEY_SHA256: ${{ inputs.hyprland_key_sha256 }}
-      VOID_ROOTFS_URL: https://repo-fastly.voidlinux.org/live/current/void-aarch64-ROOTFS-20250202.tar.xz       
+      ACCEPT_VUR_REPO: ${{ inputs.accept_vur_repo }}
+      VOID_ROOTFS_URL: https://repo-fastly.voidlinux.org/live/current/void-aarch64-ROOTFS-20250202.tar.xz
       VOID_ROOTFS_SHA256: 01a30f17ae06d4d5b322cd579ca971bc479e02cc284ec1e5a4255bea6bac3ce6
       HEXDUMP_RELEASE: 6.18.34-stb-cbm+
       HEXDUMP_KERNEL_URL: https://github.com/hexdump0815/linux-mainline-mediatek-mt81xx-kernel/releases/download/6.18.34-stb-cbm%2B/6.18.34-stb-cbm%2B.tar.gz
       HEXDUMP_KERNEL_SHA256: d8c4bbde8eb206145aa53733d2ab2d0f985b7b983b9151a5f0543ffe0d5c83ad
       VUR_REPOSITORY: https://repo.osowoso.org/aarch64
-      NOCTALIA_VERSION: 5.4.1
-      NOCTALIA_SOURCE_URL: https://github.com/noctalia-dev/noctalia/releases/download/v5.4.1/noctalia-v5.4.1.tar.gz
-      NOCTALIA_SOURCE_SHA256: 46fe42df052b4cee4be0b8681936d3a5db05be9df04964fbface0694f0f67cf7
+      TIMEZONE: America/Santo_Domingo
 
     steps:
       - name: Check out repository
@@ -76,7 +56,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             ca-certificates curl xz-utils zstd tar gzip file binutils \
-            device-tree-compiler u-boot-tools vboot-kernel-utils kmod jq
+            device-tree-compiler u-boot-tools vboot-kernel-utils kmod
 
       - name: Download and verify official Void rootfs
         shell: bash
@@ -95,28 +75,15 @@ jobs:
             "$HEXDUMP_KERNEL_URL" -o work/downloads/hexdump-kernel.tar.gz
           echo "$HEXDUMP_KERNEL_SHA256  work/downloads/hexdump-kernel.tar.gz" | sha256sum --check --strict
           tar -tzf work/downloads/hexdump-kernel.tar.gz > work/kernel-archive-list.txt
-          grep -F 'vmlinux.kpart-6.18.34-stb-cbm+' work/kernel-archive-list.txt
-          grep -F 'lib/modules/6.18.34-stb-cbm+/' work/kernel-archive-list.txt | head -n 5 || true
+          grep -F "vmlinux.kpart-${HEXDUMP_RELEASE}" work/kernel-archive-list.txt
 
-      - name: Download and verify Noctalia source release
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl --fail --location --retry 5 --retry-all-errors \
-            "$NOCTALIA_SOURCE_URL" -o work/downloads/noctalia.tar.gz
-          echo "$NOCTALIA_SOURCE_SHA256  work/downloads/noctalia.tar.gz" | sha256sum --check --strict
-
-      - name: Assemble Void rootfs, Hyprland, Noctalia and kernel
+      - name: Assemble Void rootfs, Hyprland, Noctalia, greeter and kernel
         shell: bash
         env:
-          ACCEPT_HYPRLAND_REPO: ${{ inputs.accept_hyprland_repo }}
-          HYPRLAND_KEY_URL: ${{ inputs.hyprland_key_url }}
-          HYPRLAND_KEY_SHA256: ${{ inputs.hyprland_key_sha256 }}
-        run: |
-          set -euo pipefail
-          echo "HYPRLAND_KEY_URL set: ${HYPRLAND_KEY_URL:+yes}"
-          sudo -E bash scripts/build-rootfs.sh 
-          
+          # Optional secret: output of `openssl passwd -6` for user "fede".
+          FEDE_PASSWORD_HASH: ${{ secrets.FEDE_PASSWORD_HASH }}
+        run: sudo -E bash scripts/build-rootfs.sh
+
       - name: Upload verified artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -126,6 +93,9 @@ jobs:
             work/out/kernelB.vboot
             work/out/SHA256SUMS
             work/out/manifest.json
+            work/out/xbps-installed-packages.txt
+            work/out/kernel-command-line.txt
+            work/out/vur-packages.txt
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
