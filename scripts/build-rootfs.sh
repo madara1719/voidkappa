@@ -48,6 +48,8 @@ mkdir -p "$ROOTFS/etc/xbps.d" "$ROOTFS/var/service" \
   "$ROOTFS/etc/skel/.config/hypr" "$ROOTFS/usr/local/bin"
 printf 'repository=%s\n' "$VUR_REPOSITORY" > "$ROOTFS/etc/xbps.d/20-vur.conf"
 
+# Import VUR signing key before running XBPS in the chroot.
+mkdir -p "$ROOTFS/var/db/xbps/keys"
 # Provide DNS and the kernel interfaces required by XBPS package installation.
 install -D -m 0644 /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 for d in dev dev/pts proc sys run; do mkdir -p "$ROOTFS/$d"; done
