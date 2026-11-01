@@ -9,7 +9,12 @@ on:
         default: 'c3621fce-ebbb-4ce4-9338-c18a405840ca'
         type: string
       accept_vur_repo:
-        description: I understand that Hyprland, Noctalia and the greeter come from the third-party Void Community Repository (VUR)
+        description: I understand that Noctalia and the greeter come from the third-party Void Community Repository (VUR)
+        required: true
+        default: false
+        type: boolean
+      accept_hyprland_repo:
+        description: I understand that Hyprland comes from the third-party Sofijacom hyprland-void repository
         required: true
         default: false
         type: boolean
@@ -28,6 +33,7 @@ jobs:
     env:
       ROOT_PARTUUID: ${{ inputs.root_partuuid }}
       ACCEPT_VUR_REPO: ${{ inputs.accept_vur_repo }}
+      ACCEPT_HYPRLAND_REPO: ${{ inputs.accept_hyprland_repo }}
       VOID_ROOTFS_URL: https://repo-fastly.voidlinux.org/live/current/void-aarch64-ROOTFS-20250202.tar.xz
       VOID_ROOTFS_SHA256: 01a30f17ae06d4d5b322cd579ca971bc479e02cc284ec1e5a4255bea6bac3ce6
       HEXDUMP_RELEASE: 6.18.34-stb-cbm+
@@ -49,6 +55,11 @@ jobs:
             echo 'Set accept_vur_repo=true only after reviewing the third-party VUR repository.'
             exit 1
           }
+          [[ "$ACCEPT_HYPRLAND_REPO" == 'true' ]] || {
+            echo 'Set accept_hyprland_repo=true only after reviewing the Sofijacom repository.'
+            exit 1
+          }
+          test -s keys/hyprland-void.plist || { echo 'keys/hyprland-void.plist is missing from the repository'; exit 1; }
           echo "Building for root PARTUUID: $ROOT_PARTUUID"
 
       - name: Install host tools
