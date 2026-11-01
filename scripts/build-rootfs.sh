@@ -96,7 +96,6 @@ tar -xJf "$DOWNLOADS/void-rootfs.tar.xz" \
 # Ensure required directories exist and are actual directories.
 for dir in \
   "$ROOTFS/etc/xbps.d" \
-  "$ROOTFS/var/service" \
   "$ROOTFS/etc/skel/.config/hypr" \
   "$ROOTFS/usr/local/bin" \
   "$ROOTFS/var/db/xbps/keys"
@@ -106,7 +105,22 @@ do
   fi
 
   mkdir -p "$dir"
-done
+done 
+
+# Preserve Void's standard /var/service symlink.
+SERVICE_LINK="$ROOTFS/var/service"
+
+if [[ -L "$SERVICE_LINK" ]]; then
+  if [[ "$(readlink "$SERVICE_LINK")" != "../run/runit/runsvdir/current" ]]; then
+    echo "ERROR: Unexpected /var/service symlink target." >&2
+    exit 1
+  fi
+elif [[ ! -e "$SERVICE_LINK" ]]; then
+  ln -s ../run/runit/runsvdir/current "$SERVICE_LINK"
+else
+  echo "ERROR: /var/service exists but is not a symlink." >&2
+  exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # Configure VUR repository.
@@ -493,17 +507,30 @@ grep -F "root=PARTUUID=${ROOT_PARTUUID}" \
 grep -F 'modprobe.blacklist=onboard_usb_dev' \
   "$WORK/kernelB.cmdline" >/dev/null
 
+# Keep a record of exact package versions chosen by the live XBPS repositories.
+chroot "$ROOTFS" xbps-query -l | sort > "$OUT/xbps-installed-packages.txt"
+cp "$WORK/kernelB.cmdline" "$OUT/kernel-command-line.txt"
+
 # ---------------------------------------------------------------------------
-# Record installed packages and kernel command line.
+# Unmount host pseudo-filesystems before creating the rootfs archive.
+# Never package the runner's live /sys, /proc, /dev or /run.
 # ---------------------------------------------------------------------------
 
-echo "== Recording build metadata =="
+echo "== Unmounting chroot filesystems =="
 
-chroot "$ROOTFS" xbps-query -l |
-  sort > "$OUT/xbps-installed-packages.txt"
+cleanup_mounts
+set -e
 
-cp "$WORK/kernelB.cmdline" \
-  "$OUT/kernel-command-line.txt"
+for d in run sys proc dev/pts dev; do
+  if mountpoint -q "$ROOTFS/$d"; then
+    echo "ERROR: $ROOTFS/$d is still mounted." >&2
+    exit 1
+  fi
+done
+
+trap - EXIT
+
+echo "All chroot mounts successfully removed."
 
 # ---------------------------------------------------------------------------
 # Create rootfs archive.
@@ -516,8 +543,13 @@ tar \
   --xattrs \
   --acls \
   --zstd \
+  --exclude='./proc/*' \
+  --exclude='./sys/*' \
+  --exclude='./dev/*' \
+  --exclude='./run/*' \
   -C "$ROOTFS" \
-  -cf "$OUT/void-kappa-rootfs.tar.zst" .
+  -cf "$OUT/void-kappa-rootfs.tar.zst" \ 
+  .
 
 # ---------------------------------------------------------------------------
 # Generate build manifest.
