@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       root_partuuid:
-        description: PARTUUID of the internal root partition (mmcblk0p4 on this device)
+        description: PARTUUID of the microSD root partition used for testing
         required: true
-        default: '94cc72f9-f583-4146-b033-54fda2decd89'
+        default: 'c3621fce-ebbb-4ce4-9338-c18a405840ca'
         type: string
       accept_vur_repo:
         description: I understand that Hyprland/Noctalia packages come from the third-party Void Community Repository (VUR)
@@ -41,6 +41,9 @@ jobs:
       NOCTALIA_SOURCE_SHA256: 46fe42df052b4cee4be0b8681936d3a5db05be9df04964fbface0694f0f67cf7
 
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
       - name: Check inputs
         shell: bash
         run: |
