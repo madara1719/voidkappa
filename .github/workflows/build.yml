@@ -108,8 +108,15 @@ jobs:
 
       - name: Assemble Void rootfs, Hyprland, Noctalia and kernel
         shell: bash
-        run: sudo --preserve-env=ROOT_PARTUUID,ACCEPT_VUR_REPO,HEXDUMP_RELEASE,VUR_REPOSITORY,NOCTALIA_VERSION,GITHUB_WORKSPACE bash scripts/build-rootfs.sh
-
+        env:
+          ACCEPT_HYPRLAND_REPO: ${{ inputs.accept_hyprland_repo }}
+          HYPRLAND_KEY_URL: ${{ inputs.hyprland_key_url }}
+          HYPRLAND_KEY_SHA256: ${{ inputs.hyprland_key_sha256 }}
+        run: |
+          set -euo pipefail
+          echo "HYPRLAND_KEY_URL set: ${HYPRLAND_KEY_URL:+yes}"
+          sudo -E bash scripts/build-rootfs.sh 
+          
       - name: Upload verified artifacts
         uses: actions/upload-artifact@v4
         with:
