@@ -7,12 +7,25 @@ on:
         description: PARTUUID of the microSD root partition used for testing
         required: true
         default: 'c3621fce-ebbb-4ce4-9338-c18a405840ca'
-        type: string
+        type: string 
       accept_vur_repo:
-        description: I understand that Hyprland/Noctalia packages come from the third-party Void Community Repository (VUR)
+         description: I understand that Hyprland/Noctalia packages come from the third-party Void Community Repository (VUR)
+         required: true
+         default: false
+         type: boolean
+      accept_hyprland_repo:
+        description: I trust the third-party Sofijacom Hyprland AArch64 repository and its signing key
         required: true
         default: false
         type: boolean
+      hyprland_key_url:
+        description: Raw URL of the Hyprland repo public key (.plist)
+        required: true
+        type: string
+      hyprland_key_sha256:
+        description: sha256 of the key file you reviewed
+        required: true
+        type: string
 
 permissions:
   contents: read
