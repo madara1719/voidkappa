@@ -37,18 +37,25 @@ echo "$NOCTALIA_SOURCE_SHA256  $WORK/downloads/noctalia.tar.gz" | sha256sum --ch
 
 echo '== Extracting Void aarch64 glibc ROOTFS =='
 tar -xJf "$WORK/downloads/void-rootfs.tar.xz" -C "$ROOTFS" --numeric-owner
-
+# Ensure required rootfs directories exist.
+for dir in \
+  "$ROOTFS/etc/xbps.d" \
+  "$ROOTFS/var/service" \
+  "$ROOTFS/etc/skel/.config/hypr" \
+  "$ROOTFS/usr/local/bin" \
+  "$ROOTFS/var/db/xbps/keys"
+do
+  if [[ -L "$dir" || -f "$dir" ]]; then
+    rm -f "$dir"
+  fi
+  mkdir -p "$dir"
+done
 # Void ROOTFS is a bootstrap environment, not a complete desktop. Update XBPS
 # and install only the packages required for this Chromebook profile.
 # Ensure runit service directory exists as a real directory.
 if [[ -L "$ROOTFS/var/service" || -f "$ROOTFS/var/service" ]]; then
   rm -f "$ROOTFS/var/service"
 fi
-mkdir -p "$ROOTFS/etc/xbps.d" \
-  "$ROOTFS/var/service" \
-  "$ROOTFS/etc/skel/.config/hypr" \
-  "$ROOTFS/usr/local/bin" \
-  "$ROOTFS/var/db/xbps/keys"
 
 printf 'repository=%s\n' "$VUR_REPOSITORY" > "$ROOTFS/etc/xbps.d/20-vur.conf"
 
@@ -63,12 +70,11 @@ if ! curl -fL --retry 3 \
     -o "$VUR_KEY"
 fi
 
-# Install it under the fingerprint reported by the VUR repository.
-install -m 0644 "$VUR_KEY" \
-  "$ROOTFS/var/db/xbps/keys/df:ec:10:ef:5c:03:e9:e0:9e:86:77:08:c2:b5:a8:cb.plist"
-
-# Import VUR signing key before running XBPS in the chroot.
 mkdir -p "$ROOTFS/var/db/xbps/keys"
+
+install -m 0644 "$VUR_KEY" \
+  "$ROOTFS/var/db/xbps/keys/df:ec:10:ef:5c:03:e9:e0:86:77:08:c2:b5:a8:cb.plist"
+  
 # Provide DNS and the kernel interfaces required by XBPS package installation.
 install -D -m 0644 /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 for d in dev dev/pts proc sys run; do mkdir -p "$ROOTFS/$d"; done
@@ -136,10 +142,11 @@ chroot "$ROOTFS" /bin/sh -euc '
   passwd -l fede >/dev/null 2>&1 || true
 '
 
-
-# Enable runit services only when the package actually installed their service dirs.
-mkdir -p "$ROOTFS/var/service"
-
+if [[ ! -d "$ROOTFS/var/service" ]]; then
+  echo "ERROR: runit service directory is missing or invalid." >&2
+  ls -ld "$ROOTFS/var" "$ROOTFS/var/service" 2>/dev/null || true
+  exit 1
+fi
 for service in dbus NetworkManager bluetoothd elogind seatd; do
   if [[ -d "$ROOTFS/etc/sv/$service" ]]; then
     ln -sfn "/etc/sv/$service" "$ROOTFS/var/service/$service"
