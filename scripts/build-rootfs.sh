@@ -59,45 +59,35 @@ fi
 
 printf 'repository=%s\n' "$VUR_REPOSITORY" > "$ROOTFS/etc/xbps.d/20-vur.conf"
 
-# Download the VUR public signing key from its documented upstream sources.
+# Install the VUR public signing key using the documented XBPS fingerprint filename.
 VUR_KEY="$WORK/oco-repo-key.plist"
+VUR_KEY_PATH="$ROOTFS/var/db/xbps/keys/df:ec:10:ef:5c:03:e9:e0:86:77:08:c2:b5:a8:cb.plist"
 
-if ! curl -fL --retry 3 \
+mkdir -p "$ROOTFS/var/db/xbps/keys"
+
+if ! curl -fsSL --retry 3 \
   "https://codeberg.org/oSoWoSo/oco/raw/branch/OCO/oco-repo-key.plist" \
   -o "$VUR_KEY"; then
-  curl -fL --retry 3 \
+  curl -fsSL --retry 3 \
     "https://raw.githubusercontent.com/oSoWoSo/oco/OCO/oco-repo-key.plist" \
     -o "$VUR_KEY"
 fi
 
-echo "== VUR public key fingerprint check =="
-
-if ! grep -Fqi \
-  'df:ec:10:ef:5c:03:e9:e0:9e:86:77:08:c2:b5:a8:cb' \
-  "$VUR_KEY"; then
-  echo "ERROR: VUR public key does not contain the expected fingerprint." >&2
+if [[ ! -s "$VUR_KEY" ]]; then
+  echo "ERROR: VUR public key download is empty." >&2
   exit 1
 fi
 
-# Prepare XBPS key directory.
-mkdir -p "$ROOTFS/var/db/xbps/keys"
-
-VUR_KEY="$WORK/oco-repo-key.plist"
-VUR_KEY_PATH="$ROOTFS/var/db/xbps/keys/df:ec:10:ef:5c:03:e9:e0:9e:86:77:08:c2:b5:a8:cb.plist"
-
-if ! curl -fL --retry 3 \
-  "https://codeberg.org/oSoWoSo/oco/raw/branch/OCO/oco-repo-key.plist" \
-  -o "$VUR_KEY"; then
-  curl -fL --retry 3 \
-    "https://raw.githubusercontent.com/oSoWoSo/oco/OCO/oco-repo-key.plist" \
-    -o "$VUR_KEY"
-fi
-
-test -s "$VUR_KEY"
 install -m 0644 "$VUR_KEY" "$VUR_KEY_PATH"
 
-echo "Installed VUR key:"
+if ! cmp -s "$VUR_KEY" "$VUR_KEY_PATH"; then
+  echo "ERROR: Installed VUR key differs from downloaded key." >&2
+  exit 1
+fi
+
+echo "VUR key installed:"
 ls -l "$VUR_KEY_PATH"
+sha256sum "$VUR_KEY_PATH"
   
 # Provide DNS and the kernel interfaces required by XBPS package installation.
 install -D -m 0644 /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
