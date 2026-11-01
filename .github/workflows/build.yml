@@ -1,0 +1,105 @@
+name: Build Void Linux for HP Chromebook 11a-na0010nr (kappa)
+
+on:
+  workflow_dispatch:
+    inputs:
+      root_partuuid:
+        description: PARTUUID of the internal root partition (mmcblk0p4 on this device)
+        required: true
+        default: '94cc72f9-f583-4146-b033-54fda2decd89'
+        type: string
+      accept_vur_repo:
+        description: I understand that Hyprland/Noctalia packages come from the third-party Void Community Repository (VUR)
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: void-kappa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # GitHub-hosted ARM64 runner; this is a public repository, so standard
+    # hosted-runner use is available without building on the Chromebook.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    env:
+      ROOT_PARTUUID: ${{ inputs.root_partuuid }}
+      ACCEPT_VUR_REPO: ${{ inputs.accept_vur_repo }}
+      VOID_ROOTFS_URL: https://repo-default.voidlinux.org/live/current/void-aarch64-ROOTFS-20250202.tar.xz
+      VOID_ROOTFS_SHA256: 01a30f17ae06d4d5b322cd579ca971bc479e02cc284ec1e5a4255bea6bac3ce6
+      HEXDUMP_RELEASE: 6.18.34-stb-cbm+
+      HEXDUMP_KERNEL_URL: https://github.com/hexdump0815/linux-mainline-mediatek-mt81xx-kernel/releases/download/6.18.34-stb-cbm%2B/6.18.34-stb-cbm%2B.tar.gz
+      HEXDUMP_KERNEL_SHA256: d8c4bbde8eb206145aa53733d2ab2d0f985b7b983b9151a5f0543ffe0d5c83ad
+      VUR_REPOSITORY: https://repo.osowoso.org/aarch64
+      NOCTALIA_VERSION: 5.4.1
+      NOCTALIA_SOURCE_URL: https://github.com/noctalia-dev/noctalia/releases/download/v5.4.1/noctalia-v5.4.1.tar.gz
+      NOCTALIA_SOURCE_SHA256: 46fe42df052b4cee4be0b8681936d3a5db05be9df04964fbface0694f0f67cf7
+
+    steps:
+      - name: Check inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$ROOT_PARTUUID" =~ ^[0-9a-fA-F-]{36}$ ]] || { echo 'Invalid PARTUUID'; exit 1; }
+          [[ "$ACCEPT_VUR_REPO" == 'true' ]] || {
+            echo 'Set accept_vur_repo=true only after reviewing the third-party VUR repository.'
+            exit 1
+          }
+          echo "Building for root PARTUUID: $ROOT_PARTUUID"
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ca-certificates curl xz-utils zstd tar gzip file binutils \
+            device-tree-compiler u-boot-tools vboot-kernel-utils kmod jq
+
+      - name: Download and verify official Void rootfs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/downloads work/rootfs work/kernel work/out
+          curl --fail --location --retry 5 --retry-all-errors \
+            "$VOID_ROOTFS_URL" -o work/downloads/void-rootfs.tar.xz
+          echo "$VOID_ROOTFS_SHA256  work/downloads/void-rootfs.tar.xz" | sha256sum --check --strict
+
+      - name: Download and verify Hexdump kernel release
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 5 --retry-all-errors \
+            "$HEXDUMP_KERNEL_URL" -o work/downloads/hexdump-kernel.tar.gz
+          echo "$HEXDUMP_KERNEL_SHA256  work/downloads/hexdump-kernel.tar.gz" | sha256sum --check --strict
+          tar -tzf work/downloads/hexdump-kernel.tar.gz > work/kernel-archive-list.txt
+          grep -F 'vmlinux.kpart-6.18.34-stb-cbm+' work/kernel-archive-list.txt
+          grep -F 'lib/modules/6.18.34-stb-cbm+/' work/kernel-archive-list.txt | head -n 5 || true
+
+      - name: Download and verify Noctalia source release
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 5 --retry-all-errors \
+            "$NOCTALIA_SOURCE_URL" -o work/downloads/noctalia.tar.gz
+          echo "$NOCTALIA_SOURCE_SHA256  work/downloads/noctalia.tar.gz" | sha256sum --check --strict
+
+      - name: Assemble Void rootfs, Hyprland, Noctalia and kernel
+        shell: bash
+        run: sudo --preserve-env=ROOT_PARTUUID,ACCEPT_VUR_REPO,HEXDUMP_RELEASE,VUR_REPOSITORY,NOCTALIA_VERSION,GITHUB_WORKSPACE bash scripts/build-rootfs.sh
+
+      - name: Upload verified artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: void-kappa-${{ github.run_number }}
+          path: |
+            work/out/void-kappa-rootfs.tar.zst
+            work/out/kernelB.vboot
+            work/out/SHA256SUMS
+            work/out/manifest.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
