@@ -137,6 +137,8 @@ chroot "$ROOTFS" /bin/sh -euc '
 '
 
 # Enable runit services only when the package actually installed their service dirs.
+mkdir -p "$ROOTFS/var/service"
+
 for service in dbus NetworkManager bluetoothd elogind seatd; do
   if [[ -d "$ROOTFS/etc/sv/$service" ]]; then
     ln -sfn "/etc/sv/$service" "$ROOTFS/var/service/$service"
