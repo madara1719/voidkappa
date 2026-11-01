@@ -40,7 +40,12 @@ tar -xJf "$WORK/downloads/void-rootfs.tar.xz" -C "$ROOTFS" --numeric-owner
 
 # Void ROOTFS is a bootstrap environment, not a complete desktop. Update XBPS
 # and install only the packages required for this Chromebook profile.
-mkdir -p "$ROOTFS/etc/xbps.d" "$ROOTFS/var/service" "$ROOTFS/etc/skel/.config/hypr" "$ROOTFS/usr/local/bin"
+# Ensure runit service directory exists as a real directory.
+if [[ -L "$ROOTFS/var/service" || -f "$ROOTFS/var/service" ]]; then
+  rm -f "$ROOTFS/var/service"
+fi
+mkdir -p "$ROOTFS/etc/xbps.d" "$ROOTFS/var/service" \
+  "$ROOTFS/etc/skel/.config/hypr" "$ROOTFS/usr/local/bin"
 printf 'repository=%s\n' "$VUR_REPOSITORY" > "$ROOTFS/etc/xbps.d/20-vur.conf"
 
 # Provide DNS and the kernel interfaces required by XBPS package installation.
