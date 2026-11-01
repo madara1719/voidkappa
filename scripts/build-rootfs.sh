@@ -152,7 +152,7 @@ chroot "$ROOTFS" /bin/sh -euc '
   xbps-install -SMuy \
     NetworkManager wpa_supplicant dbus bluez elogind seatd polkit \
     greetd chrony \
-    pipewire wireplumber libspa-bluetooth pipewire-alsa \
+    pipewire wireplumber libspa-bluetooth \
     alsa-utils alsa-ucm-conf linux-firmware \
     mesa-dri xorg-server-xwayland xdg-desktop-portal \
     foot sudo shadow curl zstd tar \
@@ -213,6 +213,21 @@ chroot "$ROOTFS" /bin/sh -euc '
       "$(xbps-query -p repository "$p")"
   done
 ' | tee "$OUT/vur-packages.txt"
+
+# ---------------------------------------------------------------------------
+# ALSA -> PipeWire bridge (shipped inside the pipewire package; Void needs
+# the config snippets linked into /etc/alsa/conf.d).
+# ---------------------------------------------------------------------------
+
+mkdir -p "$ROOTFS/etc/alsa/conf.d"
+for conf in 50-pipewire.conf 99-pipewire-default.conf; do
+  if [[ -e "$ROOTFS/usr/share/alsa/alsa.conf.d/$conf" ]]; then
+    ln -sf "/usr/share/alsa/alsa.conf.d/$conf" "$ROOTFS/etc/alsa/conf.d/$conf"
+    echo "Linked ALSA config: $conf"
+  else
+    echo "WARNING: /usr/share/alsa/alsa.conf.d/$conf not found; skipping." >&2
+  fi
+done
 
 # ---------------------------------------------------------------------------
 # Users and groups.
