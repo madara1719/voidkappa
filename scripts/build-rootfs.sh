@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
@@ -15,6 +14,22 @@ VUR_REPOSITORY="${VUR_REPOSITORY:-https://repo.osowoso.org/aarch64}"
 # Exact RSA fingerprint published by the VUR repository.
 VUR_KEY_FINGERPRINT="df:ec:10:ef:5c:03:e9:e0:9e:86:77:08:c2:b5:a8:cb"
 
+# ---------------------------------------------------------------------------
+# Third-party Hyprland repository (Sofijacom), independent from VUR.
+# It has its own RSA key and requires its own explicit acceptance.
+#
+# The public key file (*.plist) is published in the "Public repo-key" section
+# of the repository documentation. Provide:
+#   HYPRLAND_KEY_URL     - raw URL of that .plist
+#   HYPRLAND_KEY_SHA256  - sha256 of the .plist you reviewed yourself
+# The build fails if either is missing or the hash does not match, so the
+# key is pinned by content and not trusted just because it was downloaded.
+# ---------------------------------------------------------------------------
+HYPRLAND_REPOSITORY="${HYPRLAND_REPOSITORY:-https://raw.githubusercontent.com/sofijacom/hyprland-void/repository-aarch64-glibc}"
+HYPRLAND_KEY_FINGERPRINT="b3:21:c4:43:d9:38:6f:ec:36:64:0d:65:37:13:c1:fe"
+HYPRLAND_KEY_URL="${HYPRLAND_KEY_URL:?HYPRLAND_KEY_URL must be supplied (raw URL of the repo public key .plist)}"
+HYPRLAND_KEY_SHA256="${HYPRLAND_KEY_SHA256:?HYPRLAND_KEY_SHA256 must be supplied (sha256 of the reviewed key file)}"
+
 NOCTALIA_VERSION="${NOCTALIA_VERSION:-5.4.1}"
 NOCTALIA_SOURCE_SHA256="${NOCTALIA_SOURCE_SHA256:-46fe42df052b4cee4be0b8681936d3a5db05be9df04964fbface0694f0f67cf7}"
 
@@ -27,7 +42,10 @@ DOWNLOADS="$WORK/downloads"
 VUR_KEY="$WORK/oco-repo-key.plist"
 VUR_KEY_PATH="$ROOTFS/var/db/xbps/keys/${VUR_KEY_FINGERPRINT}.plist"
 
-echo "BUILD SCRIPT VERSION: KAPPA-SERVICE-DIR-FIX-3"
+HYPRLAND_KEY="$WORK/hyprland-void-repo-key.plist"
+HYPRLAND_KEY_PATH="$ROOTFS/var/db/xbps/keys/${HYPRLAND_KEY_FINGERPRINT}.plist"
+
+echo "BUILD SCRIPT VERSION: KAPPA-HYPRLAND-REPO-1"
 
 # ---------------------------------------------------------------------------
 # Prepare build directories.
@@ -57,11 +75,16 @@ cleanup_mounts() {
 trap cleanup_mounts EXIT
 
 # ---------------------------------------------------------------------------
-# Require explicit acceptance of the third-party VUR repository.
+# Require explicit, independent acceptance of each third-party repository.
 # ---------------------------------------------------------------------------
 
 if [[ "${ACCEPT_VUR_REPO:-false}" != "true" ]]; then
   echo "VUR acceptance was not explicitly enabled in workflow_dispatch." >&2
+  exit 1
+fi
+
+if [[ "${ACCEPT_HYPRLAND_REPO:-false}" != "true" ]]; then
+  echo "Hyprland repository requires separate explicit acceptance." >&2
   exit 1
 fi
 
@@ -106,7 +129,7 @@ do
   fi
 
   mkdir -p "$dir"
-done 
+done
 
 # Preserve Void's standard /var/service symlink.
 SERVICE_LINK="$ROOTFS/var/service"
@@ -129,6 +152,15 @@ fi
 
 printf 'repository=%s\n' "$VUR_REPOSITORY" \
   > "$ROOTFS/etc/xbps.d/20-vur.conf"
+
+# ---------------------------------------------------------------------------
+# Configure the Sofijacom Hyprland repository.
+# Named 15-* so it is read before VUR (20-*) and its Hyprland stack
+# (hyprland, hyprlang, hyprutils...) is not shadowed by VUR's copies.
+# ---------------------------------------------------------------------------
+
+printf 'repository=%s\n' "$HYPRLAND_REPOSITORY" \
+  > "$ROOTFS/etc/xbps.d/15-hyprland-void.conf"
 
 # ---------------------------------------------------------------------------
 # Download and install the VUR public signing key.
@@ -171,14 +203,43 @@ echo "Installed VUR key:"
 ls -l "$VUR_KEY_PATH"
 sha256sum "$VUR_KEY_PATH"
 
-# Verify that the exact key is visible inside the target rootfs.
+# ---------------------------------------------------------------------------
+# Download, pin and install the Hyprland repository public key.
+# Independent from the VUR key: never reuse or rename one for the other.
+# ---------------------------------------------------------------------------
+
+echo "== Installing Hyprland repository public signing key =="
+
+curl -fsSL --retry 3 "$HYPRLAND_KEY_URL" -o "$HYPRLAND_KEY"
+
+if [[ ! -s "$HYPRLAND_KEY" ]]; then
+  echo "ERROR: Hyprland public key download is empty." >&2
+  exit 1
+fi
+
+echo "$HYPRLAND_KEY_SHA256  $HYPRLAND_KEY" | sha256sum --check --strict
+
+install -m 0644 "$HYPRLAND_KEY" "$HYPRLAND_KEY_PATH"
+
+if ! cmp -s "$HYPRLAND_KEY" "$HYPRLAND_KEY_PATH"; then
+  echo "ERROR: Installed Hyprland key differs from downloaded key." >&2
+  exit 1
+fi
+
+echo "Installed Hyprland key (expected fingerprint ${HYPRLAND_KEY_FINGERPRINT}):"
+ls -l "$HYPRLAND_KEY_PATH"
+sha256sum "$HYPRLAND_KEY_PATH"
+
+# Verify that both exact keys are visible inside the target rootfs.
 chroot "$ROOTFS" /bin/sh -euc '
-  key="/var/db/xbps/keys/df:ec:10:ef:5c:03:e9:e0:9e:86:77:08:c2:b5:a8:cb.plist"
-
-  test -s "$key"
-
-  echo "VUR signing key is present inside chroot:"
-  ls -l "$key"
+  for key in \
+    "/var/db/xbps/keys/df:ec:10:ef:5c:03:e9:e0:9e:86:77:08:c2:b5:a8:cb.plist" \
+    "/var/db/xbps/keys/b3:21:c4:43:d9:38:6f:ec:36:64:0d:65:37:13:c1:fe.plist"
+  do
+    test -s "$key"
+    echo "Signing key present inside chroot:"
+    ls -l "$key"
+  done
 '
 
 # ---------------------------------------------------------------------------
@@ -206,7 +267,7 @@ mount --bind /run "$ROOTFS/run"
 chroot "$ROOTFS" /bin/sh -euc '
   export PATH=/usr/bin:/usr/sbin:/bin:/sbin
 
-  VUR="https://repo.osowoso.org/aarch64"
+  HYPR_REPO="https://raw.githubusercontent.com/sofijacom/hyprland-void/repository-aarch64-glibc"
 
   echo "== Updating XBPS =="
 
@@ -224,18 +285,17 @@ chroot "$ROOTFS" /bin/sh -euc '
 
   xbps-query -L -v
 
-  echo "== Searching Hyprland in configured repositories =="
+  echo "== Checking Sofijacom Hyprland repository =="
 
   xbps-query -Rs hyprland
 
-  echo "== Checking Hyprland directly in VUR =="
+  echo "== Verifying Hyprland package in its repository =="
 
-  xbps-query --repository="$VUR" hyprland
+  xbps-query -R --repository="$HYPR_REPO" hyprland
 
-  echo "== Installing Hyprland packages from VUR =="
+  echo "== Installing Hyprland packages =="
 
   xbps-install -SMuy \
-    --repository="$VUR" \
     hyprland \
     hyprlock \
     hyprpaper \
@@ -319,10 +379,6 @@ chroot "$ROOTFS" /bin/sh -euc '
 '
 
 # ---------------------------------------------------------------------------
-# Enable runit services.
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
 # Enable runit services in the default runsvdir.
 # The rootfs is not booted during image construction.
 # Do not modify /var/service: it is normally a symlink in Void Linux.
@@ -344,16 +400,16 @@ ls -ld "$RUNSVDIR"
 
 for service in dbus NetworkManager bluetoothd elogind seatd; do
   SERVICE_DIR="$ROOTFS/etc/sv/$service"
-  SERVICE_LINK="$RUNSVDIR/$service"
+  SERVICE_ENABLE_LINK="$RUNSVDIR/$service"
 
   if [[ -d "$SERVICE_DIR" ]]; then
 
-    if [[ -e "$SERVICE_LINK" && ! -L "$SERVICE_LINK" ]]; then
-      echo "ERROR: $SERVICE_LINK exists and is not a symlink." >&2
+    if [[ -e "$SERVICE_ENABLE_LINK" && ! -L "$SERVICE_ENABLE_LINK" ]]; then
+      echo "ERROR: $SERVICE_ENABLE_LINK exists and is not a symlink." >&2
       exit 1
     fi
 
-    ln -sfn "/etc/sv/$service" "$SERVICE_LINK"
+    ln -sfn "/etc/sv/$service" "$SERVICE_ENABLE_LINK"
 
     echo "Enabled service: $service"
   else
@@ -562,7 +618,7 @@ tar \
   --exclude='./dev/*' \
   --exclude='./run/*' \
   -C "$ROOTFS" \
-  -cf "$OUT/void-kappa-rootfs.tar.zst" \ 
+  -cf "$OUT/void-kappa-rootfs.tar.zst" \
   .
 
 # ---------------------------------------------------------------------------
@@ -583,10 +639,14 @@ cat > "$OUT/manifest.json" <<JSON
   "void_rootfs_sha256": "${VOID_ROOTFS_SHA256}",
   "noctalia_version": "${NOCTALIA_VERSION}",
   "noctalia_source_sha256": "${NOCTALIA_SOURCE_SHA256}",
-  "hyprland_repository": "${VUR_REPOSITORY}",
+  "vur_repository": "${VUR_REPOSITORY}",
   "vur_key_fingerprint": "${VUR_KEY_FINGERPRINT}",
+  "hyprland_repository": "${HYPRLAND_REPOSITORY}",
+  "hyprland_key_fingerprint": "${HYPRLAND_KEY_FINGERPRINT}",
+  "hyprland_key_sha256": "${HYPRLAND_KEY_SHA256}",
   "notes": [
-    "Hyprland packages are installed from the third-party VUR AArch64 repository.",
+    "Hyprland packages are installed from the third-party Sofijacom hyprland-void AArch64 repository.",
+    "The VUR repository remains configured as a lower-priority secondary source.",
     "Noctalia is built from its pinned upstream source release on the ARM64 runner.",
     "The FIT is repacked for KernelB p2 to root p4 using the supplied PARTUUID.",
     "The rootfs tarball must be extracted onto an ext4 filesystem; it is not a disk image.",
@@ -611,10 +671,6 @@ JSON
     manifest.json \
     > SHA256SUMS
 )
-
-# ---------------------------------------------------------------------------
-# Unmount chroot bind mounts before artifact upload.
-# ---------------------------------------------------------------------------
 
 cleanup_mounts
 trap - EXIT
