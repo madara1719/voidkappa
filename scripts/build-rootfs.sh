@@ -294,34 +294,47 @@ chroot "$ROOTFS" /bin/sh -euc '
 # Enable runit services.
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Enable runit services in the default runsvdir.
+# The rootfs is not booted during image construction.
+# Do not modify /var/service: it is normally a symlink in Void Linux.
+# ---------------------------------------------------------------------------
+
 echo "== Configuring runit services =="
 
-if [[ ! -d "$ROOTFS/var/service" ]]; then
-  echo "ERROR: runit service directory is missing." >&2
-  ls -ld "$ROOTFS/var" "$ROOTFS/var/service" 2>/dev/null || true
+RUNSVDIR="$ROOTFS/etc/runit/runsvdir/default"
+
+if [[ ! -d "$RUNSVDIR" ]]; then
+  echo "ERROR: Void runit default runsvdir was not installed." >&2
+  ls -ld "$ROOTFS/etc/runit" \
+         "$ROOTFS/etc/runit/runsvdir" 2>/dev/null || true
   exit 1
 fi
 
-echo "Verified runit service directory:"
-ls -ld "$ROOTFS/var/service"
+echo "Using runsvdir:"
+ls -ld "$RUNSVDIR"
 
 for service in dbus NetworkManager bluetoothd elogind seatd; do
-  if [[ -d "$ROOTFS/etc/sv/$service" ]]; then
-    service_link="$ROOTFS/var/service/$service"
+  SERVICE_DIR="$ROOTFS/etc/sv/$service"
+  SERVICE_LINK="$RUNSVDIR/$service"
 
-    if [[ -L "$service_link" ]]; then
-      rm -f "$service_link"
-    elif [[ -e "$service_link" ]]; then
-      rm -rf "$service_link"
+  if [[ -d "$SERVICE_DIR" ]]; then
+
+    if [[ -e "$SERVICE_LINK" && ! -L "$SERVICE_LINK" ]]; then
+      echo "ERROR: $SERVICE_LINK exists and is not a symlink." >&2
+      exit 1
     fi
 
-    ln -s "/etc/sv/$service" "$service_link"
+    ln -sfn "/etc/sv/$service" "$SERVICE_LINK"
 
     echo "Enabled service: $service"
   else
     echo "Service not installed, skipping: $service"
   fi
 done
+
+echo "Configured default runit services:"
+ls -la "$RUNSVDIR"
 
 # ---------------------------------------------------------------------------
 # System identity and filesystem configuration.
