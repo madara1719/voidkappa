@@ -8,13 +8,21 @@ VOID_ROOTFS_SHA256="${VOID_ROOTFS_SHA256:-01a30f17ae06d4d5b322cd579ca971bc479e02
 HEXDUMP_RELEASE="${HEXDUMP_RELEASE:-6.18.34-stb-cbm+}"
 HEXDUMP_KERNEL_SHA256="${HEXDUMP_KERNEL_SHA256:-d8c4bbde8eb206145aa53733d2ab2d0f985b7b983b9151a5f0543ffe0d5c83ad}"
 
-# Third-party VUR repository: provides hyprland, noctalia and noctalia-greeter
+# Third-party VUR repository: provides noctalia and noctalia-greeter
 # (aarch64-glibc). It is added only AFTER the official Void packages are
 # installed, so it cannot shadow base-system packages.
 VUR_REPOSITORY="${VUR_REPOSITORY:-https://repo.osowoso.org/aarch64}"
 VUR_KEY_FINGERPRINT="df:ec:10:ef:5c:03:e9:e0:9e:86:77:08:c2:b5:a8:cb"
 # sha256 of the reviewed VUR key file (override if the key is ever rotated).
 VUR_KEY_SHA256="${VUR_KEY_SHA256:-db1606f78937d3e2f761c6ab4f6876dd2fec7d534f574189f1cbff13243ece6f}"
+
+# Third-party Hyprland repository (Sofijacom): VUR has no hyprland for aarch64.
+# Its public key is read from this repository's checkout (keys/hyprland-void.plist)
+# and pinned by content.
+HYPRLAND_REPOSITORY="${HYPRLAND_REPOSITORY:-https://raw.githubusercontent.com/sofijacom/hyprland-void/repository-aarch64-glibc}"
+HYPRLAND_KEY_FINGERPRINT="b3:21:c4:43:d9:38:6f:ec:36:64:0d:65:37:13:c1:fe"
+HYPRLAND_KEY_SHA256="${HYPRLAND_KEY_SHA256:-15c9e4a81c021ea5bf59200d5064288d205f29ba5e6af748796c8c4c2228203e}"
+HYPRLAND_KEY_FILE="${HYPRLAND_KEY_FILE:-${GITHUB_WORKSPACE:-$PWD}/keys/hyprland-void.plist}"
 
 TIMEZONE="${TIMEZONE:-America/Santo_Domingo}"
 
@@ -30,8 +38,9 @@ DOWNLOADS="$WORK/downloads"
 
 VUR_KEY="$WORK/oco-repo-key.plist"
 VUR_KEY_PATH="$ROOTFS/var/db/xbps/keys/${VUR_KEY_FINGERPRINT}.plist"
+HYPRLAND_KEY_PATH="$ROOTFS/var/db/xbps/keys/${HYPRLAND_KEY_FINGERPRINT}.plist"
 
-echo "BUILD SCRIPT VERSION: KAPPA-MINIMAL-GREETD-1"
+echo "BUILD SCRIPT VERSION: KAPPA-MINIMAL-GREETD-2"
 
 # ---------------------------------------------------------------------------
 # Prepare build directories.
@@ -58,6 +67,11 @@ trap cleanup_mounts EXIT
 
 if [[ "${ACCEPT_VUR_REPO:-false}" != "true" ]]; then
   echo "VUR acceptance was not explicitly enabled in workflow_dispatch." >&2
+  exit 1
+fi
+
+if [[ "${ACCEPT_HYPRLAND_REPO:-false}" != "true" ]]; then
+  echo "Hyprland repository requires separate explicit acceptance." >&2
   exit 1
 fi
 
@@ -162,7 +176,8 @@ chroot "$ROOTFS" /bin/sh -euc '
 '
 
 # ---------------------------------------------------------------------------
-# Phase 2: add VUR (pinned key) and install only Hyprland + Noctalia.
+# Phase 2: add the third-party repositories (pinned keys) and install
+# Hyprland (Sofijacom) plus Noctalia and the greeter (VUR).
 # ---------------------------------------------------------------------------
 
 echo "== Installing VUR public signing key =="
@@ -177,26 +192,47 @@ if ! curl -fsSL --retry 3 \
 fi
 
 test -s "$VUR_KEY"
-
 echo "$VUR_KEY_SHA256  $VUR_KEY" | sha256sum --check --strict
-
 install -m 0644 "$VUR_KEY" "$VUR_KEY_PATH"
 cmp -s "$VUR_KEY" "$VUR_KEY_PATH"
 
+echo "== Installing Hyprland repository public signing key =="
+
+test -s "$HYPRLAND_KEY_FILE" || {
+  echo "ERROR: $HYPRLAND_KEY_FILE not found (commit keys/hyprland-void.plist)." >&2
+  exit 1
+}
+echo "$HYPRLAND_KEY_SHA256  $HYPRLAND_KEY_FILE" | sha256sum --check --strict
+install -m 0644 "$HYPRLAND_KEY_FILE" "$HYPRLAND_KEY_PATH"
+cmp -s "$HYPRLAND_KEY_FILE" "$HYPRLAND_KEY_PATH"
+
+# 15-* is read before VUR (20-*), so Sofijacom's Hyprland stack is preferred.
+printf 'repository=%s\n' "$HYPRLAND_REPOSITORY" \
+  > "$ROOTFS/etc/xbps.d/15-hyprland-void.conf"
 printf 'repository=%s\n' "$VUR_REPOSITORY" \
   > "$ROOTFS/etc/xbps.d/20-vur.conf"
 
 chroot "$ROOTFS" /bin/sh -euc '
   export PATH=/usr/bin:/usr/sbin:/bin:/sbin
 
-  echo "== Checking packages exist in VUR (aarch64) =="
-  for p in hyprland noctalia noctalia-greeter hyprpolkitagent xdg-desktop-portal-hyprland; do
-    xbps-query -R --repository="'"$VUR_REPOSITORY"'" "$p" >/dev/null \
-      || { echo "ERROR: $p missing from VUR aarch64" >&2; exit 1; }
+  echo "== Syncing repositories (persisting the indexes) =="
+  xbps-install -Sy
+
+  echo "== Repositories in use =="
+  xbps-query -L
+
+  echo "== Checking required packages are available =="
+  for p in hyprland hyprpolkitagent xdg-desktop-portal-hyprland noctalia noctalia-greeter; do
+    if ! xbps-query -R "$p" >/dev/null 2>&1; then
+      echo "ERROR: $p not found in any configured repository" >&2
+      xbps-query -Rs "$p" >&2 || true
+      exit 1
+    fi
+    echo "  $p -> $(xbps-query -R -p pkgver "$p")"
   done
 
-  echo "== Installing Hyprland, Noctalia and the greeter from VUR =="
-  xbps-install -SMy \
+  echo "== Installing Hyprland, Noctalia and the greeter =="
+  xbps-install -Sy \
     hyprland hyprpolkitagent xdg-desktop-portal-hyprland \
     noctalia noctalia-greeter
 
@@ -579,14 +615,18 @@ cat > "$OUT/manifest.json" <<JSON
   "vur_repository": "${VUR_REPOSITORY}",
   "vur_key_fingerprint": "${VUR_KEY_FINGERPRINT}",
   "vur_key_sha256": "${VUR_KEY_SHA256}",
+  "hyprland_repository": "${HYPRLAND_REPOSITORY}",
+  "hyprland_key_fingerprint": "${HYPRLAND_KEY_FINGERPRINT}",
+  "hyprland_key_sha256": "${HYPRLAND_KEY_SHA256}",
   "hyprland": "${PKG_HYPRLAND}",
   "noctalia": "${PKG_NOCTALIA}",
   "noctalia_greeter": "${PKG_GREETER}",
   "greetd_user": "${GREETD_USER}",
   "sessions": ["hyprland", "xfce-x11"],
   "notes": [
-    "Hyprland, Noctalia and Noctalia Greeter are installed from the third-party VUR aarch64 repository.",
-    "VUR is configured only after all official Void packages are installed.",
+    "Hyprland comes from the third-party Sofijacom hyprland-void aarch64-glibc repository (VUR has no hyprland for aarch64).",
+    "Noctalia and Noctalia Greeter come from the third-party VUR aarch64 repository.",
+    "Both third-party repositories are configured only after all official Void packages are installed.",
     "greetd owns tty1; tty2-6 keep agetty as a fallback console.",
     "The FIT is repacked for the supplied root PARTUUID.",
     "The rootfs tarball must be extracted onto an ext4 filesystem; it is not a disk image.",
