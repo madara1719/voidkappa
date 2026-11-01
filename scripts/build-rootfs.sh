@@ -44,9 +44,28 @@ tar -xJf "$WORK/downloads/void-rootfs.tar.xz" -C "$ROOTFS" --numeric-owner
 if [[ -L "$ROOTFS/var/service" || -f "$ROOTFS/var/service" ]]; then
   rm -f "$ROOTFS/var/service"
 fi
-mkdir -p "$ROOTFS/etc/xbps.d" "$ROOTFS/var/service" \
-  "$ROOTFS/etc/skel/.config/hypr" "$ROOTFS/usr/local/bin"
+mkdir -p "$ROOTFS/etc/xbps.d" \
+  "$ROOTFS/var/service" \
+  "$ROOTFS/etc/skel/.config/hypr" \
+  "$ROOTFS/usr/local/bin" \
+  "$ROOTFS/var/db/xbps/keys"
+
 printf 'repository=%s\n' "$VUR_REPOSITORY" > "$ROOTFS/etc/xbps.d/20-vur.conf"
+
+# Download the VUR public signing key from its documented upstream sources.
+VUR_KEY="$WORK/oco-repo-key.plist"
+
+if ! curl -fL --retry 3 \
+  "https://codeberg.org/oSoWoSo/oco/raw/branch/OCO/oco-repo-key.plist" \
+  -o "$VUR_KEY"; then
+  curl -fL --retry 3 \
+    "https://raw.githubusercontent.com/oSoWoSo/oco/OCO/oco-repo-key.plist" \
+    -o "$VUR_KEY"
+fi
+
+# Install it under the fingerprint reported by the VUR repository.
+install -m 0644 "$VUR_KEY" \
+  "$ROOTFS/var/db/xbps/keys/df:ec:10:ef:5c:03:e9:e0:9e:86:77:08:c2:b5:a8:cb.plist"
 
 # Import VUR signing key before running XBPS in the chroot.
 mkdir -p "$ROOTFS/var/db/xbps/keys"
