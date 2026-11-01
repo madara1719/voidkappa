@@ -1,3 +1,4 @@
+
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
@@ -202,42 +203,55 @@ mount --bind /run "$ROOTFS/run"
 # ---------------------------------------------------------------------------
 # Update XBPS and install required packages.
 # ---------------------------------------------------------------------------
-
-echo "== Installing Void Linux packages =="
-
 chroot "$ROOTFS" /bin/sh -euc '
   export PATH=/usr/bin:/usr/sbin:/bin:/sbin
 
-  key="/var/db/xbps/keys/df:ec:10:ef:5c:03:e9:e0:9e:86:77:08:c2:b5:a8:cb.plist"
-
-  if [ ! -s "$key" ]; then
-    echo "ERROR: VUR signing key is missing inside chroot." >&2
-    exit 1
-  fi
+  VUR="https://repo.osowoso.org/aarch64"
 
   echo "== Updating XBPS =="
 
-  xbps-install -Suy xbps
+  xbps-install -SMuy xbps
 
-  echo "== Updating base repositories =="
+  echo "== Updating all repositories =="
 
-  xbps-install -Suy
+  xbps-install -SMuy
 
   echo "== Installing base system =="
 
-  xbps-install -Suy base-system
+  xbps-install -SMuy base-system
 
-  echo "== Installing Chromebook desktop packages =="
+  echo "== Checking repository availability =="
 
-  xbps-install -Suy \
+  xbps-query -L -v
+
+  echo "== Searching Hyprland in configured repositories =="
+
+  xbps-query -Rs hyprland
+
+  echo "== Checking Hyprland directly in VUR =="
+
+  xbps-query --repository="$VUR" hyprland
+
+  echo "== Installing Hyprland packages from VUR =="
+
+  xbps-install -SMuy \
+    --repository="$VUR" \
+    hyprland \
+    hyprlock \
+    hyprpaper \
+    hyprpicker \
+    hyprpolkitagent \
+    xdg-desktop-portal-hyprland
+
+  echo "== Installing official Void desktop packages =="
+
+  xbps-install -SMuy \
     NetworkManager wpa_supplicant dbus bluez elogind seatd polkit \
     pipewire wireplumber alsa-utils alsa-ucm-conf linux-firmware \
     mesa-dri xorg-server-xwayland xdg-desktop-portal \
     foot sudo shadow git curl zstd tar \
     xdg-user-dirs wl-clipboard grim slurp playerctl brightnessctl \
     pavucontrol fastfetch \
-    hyprland hyprlock hyprpaper hyprpicker hyprpolkitagent \
-    xdg-desktop-portal-hyprland \
     gcc make just meson ninja pkgconf \
     wayland-devel wayland-protocols libepoxy-devel MesaLib-devel \
     libglvnd-devel cairo-devel pango-devel fontconfig-devel freetype-devel \
